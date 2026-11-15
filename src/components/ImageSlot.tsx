@@ -39,7 +39,7 @@ export function ImageSlot({
   const [isDragging, setIsDragging] = useState(false);
 
   const customImageSrc = getImage(slotId);
-  const displaySrc = customImageSrc ?? (!isOwnerMode ? fallbackUrl : fallbackUrl);
+  const displaySrc = customImageSrc ?? fallbackUrl;
   const hasUploadedCustom = Boolean(customImageSrc);
   const reusableSrc = reuseFromSlotId ? getImage(reuseFromSlotId) : undefined;
 

@@ -4,6 +4,7 @@ import { ArrowDownRight, ArrowRight, FileText, Pencil } from 'lucide-react';
 import { useOwnerMode } from '../context/OwnerModeContext';
 import { usePortfolioData } from '../context/PortfolioDataContext';
 import { ImageSlot } from './ImageSlot';
+import profileImage from '../assets/images/profile.png';
 
 interface HeroSectionProps {
   onOpenLightbox: (src: string, alt: string) => void;
@@ -79,6 +80,7 @@ export function HeroSection({
                   roundedClassName="rounded-[1.6rem]"
                   className="aspect-square w-full"
                   hint="Click or drop your portrait"
+                  fallbackUrl={profileImage}
                   variant="monogram"
                   monogramInitials={initials}
                   onImageClick={onOpenLightbox}
