@@ -118,7 +118,7 @@ export function ImageSlot({
           onKeyDown={onImageClick ? handleKeyDown : undefined}
           className={`relative h-full w-full ${onImageClick ? 'cursor-zoom-in' : ''}`}
         >
-          import profile from "../assets/images/profile.png";
+         
 
             <img src={profile} alt="Profile" />
 

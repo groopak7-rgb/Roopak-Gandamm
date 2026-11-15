@@ -4,6 +4,7 @@ import { ArrowDownRight, ArrowRight, FileText, Pencil } from 'lucide-react';
 import { useOwnerMode } from '../context/OwnerModeContext';
 import { usePortfolioData } from '../context/PortfolioDataContext';
 import { ImageSlot } from './ImageSlot';
+ import profile from "../assets/images/profile.png";
 
 interface HeroSectionProps {
   onOpenLightbox: (src: string, alt: string) => void;
