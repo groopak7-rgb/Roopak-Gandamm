@@ -34,10 +34,61 @@ export function GitHubSection() {
       setLoading(true);
       try {
         const res = await fetch(`/api/github?username=${encodeURIComponent(username)}`);
-        if (!res.ok) throw new Error('Failed to load GitHub data');
-        const json = (await res.json()) as GitHubResponse;
-        if (active) setData(json);
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const json = (await res.json()) as GitHubResponse;
+          if (active && (json.repos.length > 0 || json.source === 'live')) {
+            setData(json);
+            return;
+          }
+        }
+        throw new Error('Server GitHub proxy unavailable');
       } catch {
+        try {
+          const [userRes, reposRes] = await Promise.all([
+            fetch(`https://api.github.com/users/${encodeURIComponent(username)}`),
+            fetch(`https://api.github.com/users/${encodeURIComponent(username)}/repos?sort=updated&per_page=8`),
+          ]);
+          if (userRes.ok && reposRes.ok) {
+            const userJson = (await userRes.json()) as Record<string, unknown>;
+            const reposJson = (await reposRes.json()) as Array<Record<string, unknown>>;
+            if (active) {
+              setData({
+                profile: {
+                  login: String(userJson.login || username),
+                  name: String(userJson.name || 'Roopak Gandamm'),
+                  bio: typeof userJson.bio === 'string' ? userJson.bio : null,
+                  avatarUrl: typeof userJson.avatar_url === 'string' ? userJson.avatar_url : '',
+                  htmlUrl: String(userJson.html_url || `https://github.com/${username}`),
+                  publicRepos: Number(userJson.public_repos || 0),
+                  followers: Number(userJson.followers || 0),
+                  following: Number(userJson.following || 0),
+                },
+                repos: Array.isArray(reposJson)
+                  ? reposJson
+                      .filter((r) => !r.fork)
+                      .slice(0, 6)
+                      .map((r) => ({
+                        id: Number(r.id || 0),
+                        name: String(r.name || 'repository'),
+                        description: typeof r.description === 'string' ? r.description : null,
+                        htmlUrl: String(r.html_url || `https://github.com/${username}`),
+                        homepage:
+                          typeof r.homepage === 'string' && r.homepage.trim() ? r.homepage : null,
+                        language: typeof r.language === 'string' ? r.language : null,
+                        stargazersCount: Number(r.stargazers_count || 0),
+                        forksCount: Number(r.forks_count || 0),
+                        updatedAt: String(r.updated_at || new Date().toISOString()),
+                      }))
+                  : [],
+                source: 'live',
+              });
+              return;
+            }
+          }
+        } catch {
+          // Final fallback below
+        }
         if (active) {
           setData({
             profile: null,

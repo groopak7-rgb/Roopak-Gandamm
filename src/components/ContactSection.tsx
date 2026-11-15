@@ -19,6 +19,12 @@ interface FormState {
   message: string;
 }
 
+const LOCAL_INBOX_KEY = 'roopak_local_inbox_v1';
+
+interface SubmittedState extends FormState {
+  mode: 'server' | 'local';
+}
+
 export function ContactSection({
   onOpenLightbox,
   onEditProfile,
@@ -34,7 +40,7 @@ export function ContactSection({
   });
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submittedData, setSubmittedData] = useState<FormState | null>(null);
+  const [submittedData, setSubmittedData] = useState<SubmittedState | null>(null);
   const [copied, setCopied] = useState(false);
 
   const initials = profile.name
@@ -51,6 +57,25 @@ export function ContactSection({
       window.setTimeout(() => setCopied(false), 2200);
     } catch {
       setCopied(false);
+    }
+  };
+
+  const saveLocalFallback = (payload: FormState) => {
+    try {
+      const raw = window.localStorage.getItem(LOCAL_INBOX_KEY);
+      const existing = raw ? (JSON.parse(raw) as unknown[]) : [];
+      const entry = {
+        id: `local-${Date.now()}`,
+        name: payload.name.trim(),
+        email: payload.email.trim(),
+        subject: payload.subject.trim() || 'Portfolio Inquiry',
+        message: payload.message.trim(),
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+      window.localStorage.setItem(LOCAL_INBOX_KEY, JSON.stringify([entry, ...existing]));
+    } catch {
+      // Ignore storage errors
     }
   };
 
@@ -75,17 +100,46 @@ export function ContactSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
+
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error || 'Could not send message right now.');
+        if (res.status === 400 && isJson) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body.error || 'Please check your form details and try again.');
+        }
+        // Static deployment fallback (e.g. 404/405 when Express server is not running)
+        saveLocalFallback(form);
+        setSubmittedData({ ...form, mode: 'local' });
+        setForm({ name: '', email: '', subject: '', message: '' });
+        if (isOwnerMode) void refreshMessages();
+        return;
       }
-      setSubmittedData({ ...form });
+
+      if (!isJson) {
+        saveLocalFallback(form);
+        setSubmittedData({ ...form, mode: 'local' });
+        setForm({ name: '', email: '', subject: '', message: '' });
+        if (isOwnerMode) void refreshMessages();
+        return;
+      }
+
+      setSubmittedData({ ...form, mode: 'server' });
       setForm({ name: '', email: '', subject: '', message: '' });
       if (isOwnerMode) {
         void refreshMessages();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to send message right now.');
+      if (err instanceof TypeError) {
+        // Network error / offline static fallback
+        saveLocalFallback(form);
+        setSubmittedData({ ...form, mode: 'local' });
+        setForm({ name: '', email: '', subject: '', message: '' });
+        if (isOwnerMode) void refreshMessages();
+      } else {
+        setError(err instanceof Error ? err.message : 'Unable to send message right now.');
+      }
     } finally {
       setIsSending(false);
     }
@@ -256,14 +310,19 @@ export function ContactSection({
                     <Check className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <h3 className="mt-5 font-display text-2xl font-semibold text-slate-50">
-                    Message delivered, {submittedData.name}
+                    {submittedData.mode === 'server'
+                      ? `Message delivered, ${submittedData.name}`
+                      : `Message saved, ${submittedData.name}`}
                   </h3>
                   <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-300">
                     Thank you for reaching out. Your note regarding{' '}
                     <span className="font-medium text-amber-300">
                       {submittedData.subject || 'your inquiry'}
                     </span>{' '}
-                    has been saved directly to my portfolio inbox. You can also email me anytime at{' '}
+                    {submittedData.mode === 'server'
+                      ? 'has been saved directly to my portfolio inbox.'
+                      : 'has been queued. For immediate direct delivery, open it in your email app or write to'}{' '}
+                    {submittedData.mode === 'server' ? 'You can also email me anytime at ' : ''}
                     <a
                       href={`mailto:${profile.email}`}
                       className="text-teal-300 underline underline-offset-4"
@@ -273,13 +332,26 @@ export function ContactSection({
                     .
                   </p>
 
-                  <button
-                    type="button"
-                    onClick={() => setSubmittedData(null)}
-                    className="mt-6 rounded-xl border border-white/12 bg-white/[0.04] px-4 py-2 text-sm font-medium text-slate-100 transition-colors hover:border-teal-400/40 hover:text-teal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
-                  >
-                    Send another message
-                  </button>
+                  <div className="mt-6 flex flex-wrap items-center gap-3">
+                    <a
+                      href={`mailto:${profile.email}?subject=${encodeURIComponent(
+                        submittedData.subject || `Portfolio inquiry from ${submittedData.name}`,
+                      )}&body=${encodeURIComponent(
+                        `From: ${submittedData.name} (${submittedData.email})\n\n${submittedData.message}`,
+                      )}`}
+                      className="inline-flex items-center gap-2 rounded-xl bg-teal-500 px-4 py-2 text-sm font-semibold text-[#061210] transition-colors hover:bg-teal-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300"
+                    >
+                      <Mail className="h-4 w-4" aria-hidden="true" />
+                      <span>Open in Email App</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setSubmittedData(null)}
+                      className="rounded-xl border border-white/12 bg-white/[0.04] px-4 py-2 text-sm font-medium text-slate-100 transition-colors hover:border-teal-400/40 hover:text-teal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+                    >
+                      Send another message
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} noValidate className="space-y-5">

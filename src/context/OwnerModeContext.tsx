@@ -33,6 +33,27 @@ function getInitialOwnerMode(): boolean {
   }
 }
 
+const LOCAL_INBOX_KEY = 'roopak_local_inbox_v1';
+
+function readLocalInbox(): ContactMessage[] {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_INBOX_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ContactMessage[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalInbox(items: ContactMessage[]): void {
+  try {
+    window.localStorage.setItem(LOCAL_INBOX_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export function OwnerModeProvider({ children }: { children: React.ReactNode }) {
   const [isOwnerMode, setIsOwnerModeState] = useState<boolean>(getInitialOwnerMode);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
@@ -60,13 +81,17 @@ export function OwnerModeProvider({ children }: { children: React.ReactNode }) {
     setIsLoadingMessages(true);
     try {
       const res = await fetch('/api/contact');
-      if (!res.ok) return;
-      const data = (await res.json()) as { messages?: ContactMessage[] };
-      if (Array.isArray(data.messages)) {
-        setMessages(data.messages);
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = (await res.json()) as { messages?: ContactMessage[] };
+        if (Array.isArray(data.messages)) {
+          setMessages(data.messages);
+          return;
+        }
       }
+      setMessages(readLocalInbox());
     } catch {
-      // Ignore offline errors
+      setMessages(readLocalInbox());
     } finally {
       setIsLoadingMessages(false);
     }
@@ -79,7 +104,11 @@ export function OwnerModeProvider({ children }: { children: React.ReactNode }) {
   }, [isOwnerMode, refreshMessages]);
 
   const toggleMessageRead = useCallback(async (id: string, read: boolean) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, read } : m)));
+    setMessages((prev) => {
+      const next = prev.map((m) => (m.id === id ? { ...m, read } : m));
+      writeLocalInbox(next.filter((m) => m.id.startsWith('local-')));
+      return next;
+    });
     try {
       await fetch(`/api/contact/${encodeURIComponent(id)}`, {
         method: 'PATCH',
@@ -92,7 +121,11 @@ export function OwnerModeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteMessage = useCallback(async (id: string) => {
-    setMessages((prev) => prev.filter((m) => m.id !== id));
+    setMessages((prev) => {
+      const next = prev.filter((m) => m.id !== id);
+      writeLocalInbox(next.filter((m) => m.id.startsWith('local-')));
+      return next;
+    });
     try {
       await fetch(`/api/contact/${encodeURIComponent(id)}`, { method: 'DELETE' });
     } catch {
